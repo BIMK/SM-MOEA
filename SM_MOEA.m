@@ -9,12 +9,12 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
     dim = size(train_F,2);
     ofit = zeros(sizep,2);
     initThres = 1;
-    thres = 0.1; %特征指数衰减常数
-    paretoAVE = zeros(1,2); %保存的最终Pareto的结果
+    thres = 0.1; %Exponential decay constant
+    paretoAVE = zeros(1,2); %to save final result of the Pareto front
     %[knnIndex] = preKNN(train_F);
     
-    %% 种群初始化，对应于论文的initializaition
-    % 计算维度的适应度
+    %% initializaition
+   
     TDec    = []; 
     Tobj = []; 
     TMask   = [];
@@ -35,14 +35,14 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
         end
         ofit = fliplr(ofit);
         Tobj = [Tobj; ofit];
-        dimFitness    = dimFitness + NDSort(dimfit, dim);  %前沿面序号作为维度的适应度值
+        dimFitness    = dimFitness + NDSort(dimfit, dim);  %the order of the Pareto front is used as Fintess 
     end
-    % 产生初始种群
-    %Dec = unifrnd(repmat(zeros(1,dim),sizep,1),repmat(ones(1,dim),sizep,1));实数创建
+    %  initializaition the population
+    %Dec = unifrnd(repmat(zeros(1,dim),sizep,1),repmat(ones(1,dim),sizep,1));
     Dec = ones(sizep, dim);
     Mask = zeros(sizep,dim);
     for i = 1 : sizep
-        Mask(i, TournamentSelection(2, ceil(rand*dim), dimFitness)) = 1; %根据维度的适应度值给相应的位置置1或0
+        Mask(i, TournamentSelection(2, ceil(rand*dim), dimFitness)) = 1; 
     end
     off = logical(Dec.*Mask);
     
@@ -50,18 +50,18 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
 
     
     
-    %% 评价，找出非支配解
+    %% evaluate 
     for i=1:sizep
         [ofit(i,1),ofit(i,2)] = FSKNNfeixiang(off(i, :),train_F,train_L);
     end
     [FrontNO,~] = NDSort(ofit(:,1:2),sizep);
     site = find(FrontNO==1);
     solution = ofit(site,:);
-    erBestParetoAVE = 1;  %用来保留历史最优值
+    erBestParetoAVE = 1;  %to save the history best
     paretoAVE(1) = mean(solution(:,1));
     paretoAVE(2) = mean(solution(:,2));
     
-    %% 维度互信息矩阵MI生成
+    %%  MI
     Y_train = train_L;
     %Y_train(Y_train==0)=-1;
     MI = zeros(1,dim);
@@ -69,14 +69,14 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
         MI(i) = MItest(train_F(:,i),Y_train);
     end
     
-    %% 计算DR值
+    %% DR
     DR = zeros(1,sizep);
     for i = 1:sizep
         DR(i) = sum(FrontNO>FrontNO(i));
     end
     DR = DR./sizep;
     
-    %% 初始化bitImportance指导矩阵
+    %%  initializaition  bitImportance 
     bitImportance = zeros(sizep,dim);
     for i=1:sizep
         for j=1:dim
@@ -84,30 +84,30 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
         end
     end
     
-    %% 中间量保存
+    %% 
     tAveError = zeros(1,maxFES);  %所有错误率
     tAveFea = zeros(1,maxFES); %所有特征数
     tErBest = zeros(1,maxFES);
     tThres = zeros(1,maxFES);
     tempVar = cell(1,4);
     
-    %% 迭代
+    %% 
     while FES <= maxFES
         
-        isChange = zeros(sizep,dim); %判断是否变化
-        extTemp = 0; %用来记录每代的阈值的均值
+        isChange = zeros(sizep,dim); 
+        extTemp = 0; 
         
         
 
-        %----------------维度变异----------------
+        %----------------dimensionality reduction---------------
         for i = 1:sizep
-            if(ismember(i,site)) %对pareto面上的解取消变异
+            if(ismember(i,site)) 
                 continue;
             end
             
-            curiOff = off(i,:); %当前第i个个体, 保存用来调整
-            curpSite = site(randi(length(site))); %随机选择一个pareto面上的个体
-            pop = off(curpSite,:); %pareto面上的一个个体
+            curiOff = off(i,:); 
+            curpSite = site(randi(length(site))); 
+            pop = off(curpSite,:); 
             
             aveiBit = mean(bitImportance(i,:));
             
@@ -117,38 +117,38 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
                 tempThres = initThres * exp(-thres*FES);
                 ext = ext * tempThres;
                 if rand() < ext
-                    off(i,j) = 0; %维度置零
+                    off(i,j) = 0; 
                 end
                 extTemp = extTemp + ext;
                 
-                %-----维度退化-----
-                if bitImportance(i,j) > bitImportance(curpSite,j) %当前i的重要性比最优的重要性高
-                    off(i,j) = curiOff(j); %退化至原先的值
-                else %当前i的重要性比最优的重要性低
+                %-----individual repairing-----
+                if bitImportance(i,j) > bitImportance(curpSite,j) 
+                    off(i,j) = curiOff(j); 
+                else 
                     if rand() < (bitImportance(curpSite,j) - bitImportance(i,j))/bitImportance(curpSite,j)
                         off(i,j) = popBit;
                     end
                 end
-                %-----维度退化-----
+             
                 
                 
-                %-----判断此位是否变了-----
+     
                 if curiOff(j) ~= off(i,j)
                     isChange(i,j)=1;
                 end
-                %-----判断此位是否变了-----
+         
 
             end         
         end
         extTemp = extTemp/dim/sizep;
         tThres(FES) = extTemp;
         
-        %----------------维度变异----------------
+     
         
         
         
         
-        %----------------真实评价----------------
+        %---------------evaluate----------------
         for i=1:sizep
             [ofit(i,1),ofit(i,2)] = FSKNNfeixiang(off(i,:),train_F,train_L);
          
@@ -157,21 +157,20 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
         site = find(FrontNO==1);
         solution = ofit(site,:);
         oldERAVE = paretoAVE(1);
-        paretoAVE(1) = mean(solution(:,1)); %错误率
+        paretoAVE(1) = mean(solution(:,1)); 
         paretoAVE(2) = mean(solution(:,2));
         if paretoAVE(1) < erBestParetoAVE
-            erBestParetoAVE = paretoAVE(1); %保留历史pareto最优的值
+            erBestParetoAVE = paretoAVE(1); 
         end
         oldDR = DR;
         for i = 1:sizep
             DR(i) = sum(FrontNO>FrontNO(i));
         end
         DR = DR./sizep;
-        %----------------真实评价----------------
+  
         
-        
-        %-----矩阵更新-----
-        if  paretoAVE(1) >= oldERAVE %如果新的err均值没有变好
+        %-----update SM-----
+        if  paretoAVE(1) >= oldERAVE 
             oldBI = bitImportance;
             for i=1:sizep
                 for j=1:dim
@@ -182,11 +181,11 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
              for i=1:sizep
                 for j=1:dim
                     tempIndex = site(randi(length(site)));
-                    if (FrontNO(i) <= FrontNO(tempIndex))  %如果对于较好的个体
-                        if isChange(i,j) == 1 && off(i,j) == 1 %0变1
+                    if (FrontNO(i) <= FrontNO(tempIndex))  
+                        if isChange(i,j) == 1 && off(i,j) == 1 
                             bitImportance(i,j)=bitImportance(i,j)*exp(0.8)^(1/sqrt(1+1.0));
                             bitImportance(i,j)=min(bitImportance(i,j),1.0);
-                        elseif isChange(i,j) == 1 && off(i,j) == 0 %1变0
+                        elseif isChange(i,j) == 1 && off(i,j) == 0 
                             bitImportance(i,j)=bitImportance(i,j)*exp(-0.2)^(1/sqrt(1+1.0));
                         end
                     else
@@ -200,14 +199,13 @@ function [solution, time, off, ofit, site, paretoAVE,tempVar,bitImportance] = SM
                 end
             end
         end
-        %-----矩阵更新-----
-        %----------------矩阵及阈值的更新----------------
+
         
         
         
         erBestID = find(ofit(:,1)==min(ofit(:,1)));
         erBestID = erBestID(1);
-        TEMPCNT = ((cnti-1)*maxFES+FES)/CNTTIME;%与算法无关计算剩余时间
+        TEMPCNT = ((cnti-1)*maxFES+FES)/CNTTIME;
         fprintf('PRG: %.1f%%-- GEN: %2d  Error: %.5f  F: %.2f     ErBest: %.5f     thres: %.5f\n',100*TEMPCNT, FES,paretoAVE(1),paretoAVE(2),ofit(erBestID,1),extTemp);
         tAveError(FES) = paretoAVE(1);
         tAveFea(FES) = paretoAVE(2);
